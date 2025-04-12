@@ -1,3 +1,4 @@
+# commands/Genel/kullanici.py (Düzeltilmiş Hali)
 import discord
 from discord.ext import commands
 import datetime
@@ -162,19 +163,6 @@ class BilgiCog(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    # !ping komutu (Zaten eklenmişti, burada tekrar doğrulanıyor)
-    @commands.command(name="ping", help="Botun gecikme süresini gösterir.")
-    async def ping(self, ctx: commands.Context):
-        """Botun gecikme süresini gösterir."""
-        latency = round(self.bot.latency * 1000)  # Saniyeyi milisaniyeye çevir
-        embed = self.create_embed(
-            title="🏓 Pong!",
-            description=f"Botun gecikme süresi: **{latency}ms**",
-            color=discord.Color.green(),
-            footer_user=ctx.author
-        )
-        await ctx.send(embed=embed)
-
     # !zaman komutu
     @commands.command(name="zaman", aliases=['saat'], help="Geçerli zamanı gösterir.")
     async def zaman(self, ctx: commands.Context):
@@ -193,67 +181,75 @@ class BilgiCog(commands.Cog):
     async def hesapla(self, ctx: commands.Context, *, expression: str):
         """Basit matematiksel hesaplamalar yapar."""
         try:
-            result = eval(expression, {"__builtins__": None}, {"abs": abs, "round": round})
+            # Güvenlik notu: eval() kullanımı riskli olabilir.
+            # Sadece basit matematiksel ifadelere izin vermek için kısıtlamalar ekledik.
+            # Daha güvenli bir alternatif için 'asteval' gibi kütüphaneler düşünülebilir.
+            allowed_chars = "0123456789+-*/(). "
+            if not all(c in allowed_chars for c in expression):
+                raise ValueError("İfadede izin verilmeyen karakterler var.")
+
+            # Çok uzun ifadeleri engelle
+            if len(expression) > 100:
+                 raise ValueError("İfade çok uzun.")
+
+            result = eval(expression, {"__builtins__": None}, {"abs": abs, "round": round}) # eval'ı kısıtlıyoruz
             embed = self.create_embed(
                 title="🧮 Hesaplama Sonucu",
-                description=f"**İfade:** {expression}\n**Sonuç:** {result}",
+                description=f"**İfade:** `{expression}`\n**Sonuç:** `{result}`", # Kod bloğu içinde göster
                 color=discord.Color.orange(),
                 footer_user=ctx.author
             )
             await ctx.send(embed=embed)
-        except Exception as e:
+        except (SyntaxError, ValueError, TypeError, ZeroDivisionError) as e:
             embed = self.create_embed(
                 title="❌ Hata!",
-                description=f"Geçersiz bir ifade girdin: `{expression}`\nHata: {str(e)}",
+                description=f"Geçersiz veya desteklenmeyen bir ifade girdin: `{expression}`\n*Hata: {str(e)}*",
                 color=discord.Color.red(),
                 footer_user=ctx.author
             )
             await ctx.send(embed=embed)
+        except Exception as e: # Diğer beklenmedik hatalar
+            embed = self.create_embed(
+                title="❌ Hata!",
+                description=f"Hesaplama sırasında beklenmedik bir hata oluştu: `{expression}`",
+                color=discord.Color.red(),
+                footer_user=ctx.author
+            )
+            print(f"Hesapla hatası ({expression}): {e}") # Loglama için
+            await ctx.send(embed=embed)
 
-    # !yardım komutu
-    @commands.command(name="yardım", aliases=['help'], help="Bilgi komutlarının listesini gösterir.")
-    async def yardim(self, ctx: commands.Context):
-        """Bilgi komutlarının listesini gösterir."""
-        embed = self.create_embed(
-            title="📋 Bilgi Komutları",
-            description="Aşağıda mevcut komutların listesini bulabilirsin:",
-            color=discord.Color.blue(),
-            footer_user=ctx.author
-        )
-        embed.add_field(name="y!sunucu", value="Sunucu hakkında detaylı bilgi verir.", inline=False)
-        embed.add_field(name="y!kullanıcı [üye]", value="Belirtilen kullanıcı veya kendin hakkında bilgi verir.", inline=False)
-        embed.add_field(name="y!avatar [üye]", value="Belirtilen kullanıcının veya kendinin avatarını gösterir.", inline=False)
-        embed.add_field(name="y!rolbilgi <rol>", value="Belirtilen rol hakkında bilgi verir.", inline=False)
-        embed.add_field(name="y!ping", value="Botun gecikme süresini gösterir.", inline=False)
-        embed.add_field(name="y!zaman", value="Geçerli zamanı gösterir.", inline=False)
-        embed.add_field(name="y!hesapla <ifade>", value="Basit matematiksel hesaplamalar yapar. Örnek: `y!hesapla 5 + 3`", inline=False)
 
-        await ctx.send(embed=embed)
+    # --- ARTIK GEREKLİ DEĞİL ---
+    # !yardım komutu (Bu komut Help Cog'da olduğu için buradan kaldırıldı)
+    # @commands.command(name="yardım", aliases=['help'], help="Bilgi komutlarının listesini gösterir.")
+    # async def yardim(self, ctx: commands.Context):
+    #     ... (KOD BURADAN SİLİNDİ) ...
 
-    # Hata Yönetimi
+    # --- ARTIK GEREKLİ DEĞİL ---
+    # !ping komutu (Owner Cog'da olduğu için buradan kaldırıldı)
+    # @commands.command(name="ping", help="Botun gecikme süresini gösterir.")
+    # async def ping(self, ctx: commands.Context):
+    #     ... (KOD BURADAN SİLİNDİ) ...
+
+
+    # --- Hata Yönetimi (Bu Cog'a özel) ---
+    # Not: Genel hata yönetimi main.py'deki on_command_error'da yapılıyor.
+    # Buradakiler sadece bu Cog'daki komutlara özel daha detaylı hata mesajları için.
     @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error):
-        if isinstance(error, commands.CommandInvokeError):
-            print(f"Komut hatası ({ctx.command.name}): {error.original}")
-            embed = self.create_embed(
-                title="❌ Hata!",
-                description="Komut işlenirken bir hata oluştu.",
-                color=discord.Color.red(),
-                footer_user=ctx.author
-            )
-            await ctx.send(embed=embed)
-        elif isinstance(error, commands.MissingRequiredArgument):
-            embed = self.create_embed(
-                title="❌ Eksik Argüman!",
-                description=f"Lütfen gerekli bilgileri sağlayın. Örnek: `y!{ctx.command.name} {ctx.command.signature}`",
-                color=discord.Color.red(),
-                footer_user=ctx.author
-            )
-            await ctx.send(embed=embed)
+        # Sadece bu Cog'a ait komutlarda hata olursa ve genel hata yakalayıcı çalışmazsa devreye girer
+        if ctx.cog is not self:
+            return # Başka bir Cog'un hatasıysa ilgilenme
+
+        # Genel hatalar main.py'de yakalandığı için burayı sadeleştirebiliriz
+        # veya sadece bu Cog'a özel hataları (örn: MemberNotFound) burada yakalayabiliriz.
+        # Şimdilik MemberNotFound ve RoleNotFound dışındakileri main.py'ye bırakalım.
+        pass # Diğer hatalar için bir şey yapma, main.py halleder
 
     @kullanici_bilgi.error
     @avatar_goster.error
     async def userinfo_avatar_error(self, ctx: commands.Context, error):
+        # Sadece bu komutlara özel hata yakalayıcı
         if isinstance(error, commands.MemberNotFound):
             embed = self.create_embed(
                 title="❌ Kullanıcı Bulunamadı!",
@@ -262,9 +258,11 @@ class BilgiCog(commands.Cog):
                 footer_user=ctx.author
             )
             await ctx.send(embed=embed)
+        # Diğer hatalar (MissingRequiredArgument, CommandOnCooldown vb.) main.py'deki genel yakalayıcıya gider.
 
     @rol_bilgi.error
     async def rolbilgi_error(self, ctx: commands.Context, error):
+        # Sadece bu komuta özel hata yakalayıcı
         if isinstance(error, commands.RoleNotFound):
             embed = self.create_embed(
                 title="❌ Rol Bulunamadı!",
@@ -274,25 +272,29 @@ class BilgiCog(commands.Cog):
             )
             await ctx.send(embed=embed)
         elif isinstance(error, commands.MissingRequiredArgument):
-            embed = self.create_embed(
-                title="❌ Eksik Argüman!",
-                description="Lütfen bilgi almak istediğiniz rolü belirtin (Ad, ID veya @Rol).",
-                color=discord.Color.red(),
-                footer_user=ctx.author
-            )
-            await ctx.send(embed=embed)
+             embed = self.create_embed(
+                 title="❌ Eksik Argüman!",
+                 description="Lütfen bilgi almak istediğiniz rolü belirtin (Ad, ID veya @Rol).",
+                 color=discord.Color.red(),
+                 footer_user=ctx.author
+             )
+             await ctx.send(embed=embed)
+        # Diğer hatalar main.py'deki genel yakalayıcıya gider.
 
     @hesapla.error
     async def hesapla_error(self, ctx: commands.Context, error):
+        # Sadece bu komuta özel hata yakalayıcı
         if isinstance(error, commands.MissingRequiredArgument):
             embed = self.create_embed(
                 title="❌ Eksik Argüman!",
-                description="Lütfen bir matematiksel ifade girin. Örnek: `y!hesapla 5 + 3`",
+                description=f"Lütfen bir matematiksel ifade girin. Örnek: `{self.bot.config.get('PREFIX', 'y!')}hesapla 5 + 3`", # Prefix'i config'den al
                 color=discord.Color.red(),
                 footer_user=ctx.author
             )
             await ctx.send(embed=embed)
+        # Diğer hatalar main.py'deki genel yakalayıcıya gider.
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(BilgiCog(bot))
-    print("BilgiCog setup işlemi tamamlandı.")
+    print("✅ BilgiCog yüklendi!") # Setup mesajını güncelleyelim
