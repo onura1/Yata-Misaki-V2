@@ -1,15 +1,16 @@
-# commands/Help/help.py (Sahip Komutları Bölümü Eklendi)
 import discord
 from discord.ext import commands
-# import logging # Loglama kaldırıldı
+import traceback  # Hata ayıklama için
 
 class HelpCog(commands.Cog, name="Yardım Komutları"):
-    """Yardım menüsünü içerir ve sahip komutlarını sadece sahibe gösterir."""
+    """
+    Yardım menüsünü oluşturan ve komut listesini embed açıklaması içinde gösteren Cog.
+    Sahip komutlarını dinamik olarak alır ve sadece bot sahibine ayrı bir alanda gösterir.
+    """
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # self.logger = logging.getLogger(__name__) # Loglama kaldırıldı
-        # Sahip komutlarını içeren Cog'ların tam adları (Cog sınıfındaki name='...' parametresi)
+        # Sahip komutlarını içeren Cog'ların tam adları
         self.owner_cog_names = {
             "Ping Komutu (Sahip)",
             "Durum Ayarları",
@@ -18,89 +19,145 @@ class HelpCog(commands.Cog, name="Yardım Komutları"):
             "Aktiflik Süresi (Sahip)"
         }
 
-    # Komut adı 'yardim', alias'lar güncellendi
-    @commands.command(name="yardim", aliases=["help", "komutlar", "yardimkomutu"])
+    @commands.command(
+        name="yardim",
+        aliases=["help", "komutlar", "yardimkomutu"],
+        help="Tüm kullanılabilir komutları listeler."
+    )
     async def help_command(self, ctx: commands.Context):
-        """Tüm kullanılabilir komutları listeler. Bot sahibi için özel komutları da gösterir."""
-        prefix = self.bot.config.get("PREFIX", "!") # Prefix'i config'den al, yoksa '!' kullan
-        embed = discord.Embed(
-            title="Yardım Menüsü",
-            description=f"Aşağıda kullanabileceğin komutların bir listesi bulunmaktadır.\nPrefix: `{prefix}`",
-            color=discord.Color.blue() # Renk sabit veya config'den alınabilir
+        """
+        Belirtilen komut listesini embed'in açıklama kısmında, kategorilere ayrılmış şekilde gösterir.
+        Bot sahibi için özel 'Sahip Komutları' bölümünü de dinamik olarak ayrı bir alanda ekler.
+        """
+        # Prefix'i al
+        try:
+            if callable(self.bot.command_prefix):
+                prefix = (await self.bot.command_prefix(self.bot, ctx.message))[0]
+            else:
+                prefix = self.bot.command_prefix
+            if isinstance(prefix, (list, tuple)):
+                prefix = prefix[0]
+        except Exception:
+            prefix = "y!"  # Varsayılan prefix
+            print("[UYARI] Bot prefix'i alınamadı, varsayılan 'y!' kullanılıyor.")
+
+        # --- Komut Listesi Stringlerini Oluştur ---
+        # Bilgi Komutları (BilgiCog'dan)
+        bilgi_komutlari_str = "\n".join([
+            f"`{prefix}sunucu` - Sunucu hakkında detaylı bilgi verir",
+            f"`{prefix}kullanıcı` - Kullanıcı bilgisini gösterir",
+            f"`{prefix}avatar` - Kullanıcı avatarını gösterir",
+            f"`{prefix}rolbilgi` - Rol bilgilerini gösterir",
+            f"`{prefix}ping` - Botun gecikme süresini gösterir",
+            f"`{prefix}zaman` - Geçerli zamanı gösterir",
+            f"`{prefix}hesapla` - Matematiksel hesaplamalar yapar"
+        ])
+
+        # Eğlence Komutları
+        eglence_komutlari_str = "\n".join([
+            f"`{prefix}8ball` - 8 ball özelliği biraz tahmin yürütüyor",
+            f"`{prefix}danset` - Komutu kullanan dans ediyor",
+            f"`{prefix}espripatlat` - Çok kötü espriler yapıyor",
+            f"`{prefix}kedi` - Rastgele kedi gösteriyor sana",
+            f"`{prefix}naber` - Bot senle konuşuyor",
+            f"`{prefix}rastgele` - Rastgele şeyler söylüyor",
+            f"`{prefix}sogukespri` - Soğuk espri yapıyor",
+            f"`{prefix}tahmin` - Tahmin yürütüyor sana",
+            f"`{prefix}yazitura` - Yazı tura oynuyor",
+            f"`{prefix}zar` - Zar atıyor",
+            f"`{prefix}şaka` - Şaka yapıyor"
+        ])
+
+        # Partnerlik Sistemi
+        partnerlik_komutlari_str = "\n".join([
+            f"`{prefix}partnerleaderboard` - Partnerlik lider tablosu",
+            f"`{prefix}partnerstats` - Partner istatistik kullanıcıların"
+        ])
+
+        # Seviye Komutları
+        seviye_komutlari_str = "\n".join([
+            f"`{prefix}lider` - Seviye sistemin liderlik sistemi",
+            f"`{prefix}seviye` - Seviye sistem seviye gösterme"
+        ])
+
+        # --- Embed Açıklamasını Oluştur ---
+        description_content = (
+            f"Aşağıda kullanabileceğin komutların bir listesi bulunmaktadır.\nPrefix: `{prefix}`\n\n"
+            f"### Bilgi Komutları\n{bilgi_komutlari_str}\n\n"
+            f"### Eğlence Komutları\n{eglence_komutlari_str}\n\n"
+            f"### Partnerlik Sistemi\n{partnerlik_komutlari_str}\n\n"
+            f"### Seviye Komutları\n{seviye_komutlari_str}"
         )
 
-        public_commands_by_cog = {} # Herkesin görebileceği komutlar
-        owner_commands = []         # Sadece sahibin göreceği komutlar
+        # Açıklama uzunluğunu kontrol et (Discord sınırı 4096)
+        if len(description_content) > 4096:
+            print("[UYARI] Yardım mesajı açıklaması 4096 karakter sınırını aşıyor!")
+            description_content = description_content[:4093] + "..."
 
-        # Botun tüm komutlarını dolaş
-        for command in self.bot.commands:
-            if command.hidden: continue # Gizli komutları atla
+        embed = discord.Embed(
+            title="Yardım Menüsü",
+            description=description_content,
+            color=discord.Color.blue()
+        )
 
-            cog_name = command.cog_name or "Diğer" # Cog adını al
+        # --- Dinamik Sahip Komutları ---
+        owner_commands_list = []
+        try:
+            for command in self.bot.commands:
+                if command.hidden or command.name != command.qualified_name:
+                    continue
 
-            # Komut sahip komutu mu? (Cog adına göre kontrol)
-            if cog_name in self.owner_cog_names:
-                owner_commands.append(f"`{prefix}{command.name}`")
-            else:
-                # Değilse, kullanıcı çalıştırabilir mi?
-                try:
-                    if await command.can_run(ctx):
-                        if cog_name not in public_commands_by_cog:
-                            public_commands_by_cog[cog_name] = []
-                        public_commands_by_cog[cog_name].append(f"`{prefix}{command.name}`")
-                except commands.CommandError:
-                    continue # Çalıştıramıyorsa veya hata verirse atla
+                cog_name = command.cog_name or "Diğer"
+                is_owner_command_cog = cog_name in self.owner_cog_names
+                is_owner_only_check = any(isinstance(check, commands.is_owner().predicate.__class__) for check in command.checks)
 
-        # Embed'i oluşturmaya başla
-        if not public_commands_by_cog and not owner_commands:
-             embed.description += "\n\nGörünüşe göre listelenecek bir komut bulunmuyor."
-        else:
-            # Herkese açık komutları ekle
-            sorted_public_cogs = sorted(public_commands_by_cog.items())
-            for cog_name, command_list in sorted_public_cogs:
-                commands_str = "\n".join(sorted(command_list))
-                if commands_str:
-                    embed.add_field(name=f"**{cog_name}**", value=commands_str, inline=False)
+                if is_owner_command_cog or is_owner_only_check:
+                    owner_commands_list.append(f"`{prefix}{command.name}` - {command.help or 'Açıklama yok'}")
 
-            # Komutu çalıştıran kişi sahip mi?
             is_bot_owner = await self.bot.is_owner(ctx.author)
+            if is_bot_owner and owner_commands_list:
+                owner_commands_str = "\n".join(sorted(owner_commands_list))
+                if len(owner_commands_str) > 1024:
+                    print("[UYARI] Sahip komutları alanı 1024 karakter sınırını aşıyor!")
+                    owner_commands_str = owner_commands_str[:1021] + "..."
 
-            # Eğer sahipse ve sahip komutları varsa, özel bölümü ekle
-            if is_bot_owner and owner_commands:
-                owner_commands_str = "\n".join(sorted(owner_commands))
                 if owner_commands_str:
-                     embed.add_field(
-                         name="👑 Sahip Komutları 👑",
-                         value=owner_commands_str,
-                         inline=False
-                     )
-            elif not public_commands_by_cog and not is_bot_owner and owner_commands:
-                 embed.description += "\n\nGörünüşe göre senin çalıştırabileceğin bir komut bulunmuyor."
+                    embed.add_field(
+                        name="👑 Sahip Komutları 👑",
+                        value=owner_commands_str,
+                        inline=False
+                    )
+        except Exception as e:
+            print(f"[HATA] Sahip komutları işlenirken hata oluştu: {e}")
+            traceback.print_exc()
 
         # Alt bilgi ve zaman damgası
-        embed.set_footer(text=f"{ctx.guild.name if ctx.guild else 'DM'} | {self.bot.user.name}")
+        embed.set_footer(text=f"Komut '{ctx.invoked_with}' ile çalıştırıldı | {self.bot.user.name}")
         embed.timestamp = discord.utils.utcnow()
 
         try:
             await ctx.send(embed=embed)
-        except discord.HTTPException:
-            print(f"[HATA] Yardım mesajı gönderilemedi (HTTPException): Kanal {ctx.channel.id}")
-            await ctx.send("Yardım mesajı gönderilemedi (çok fazla komut veya karakter olabilir).")
+        except discord.HTTPException as e:
+            print(f"[HATA] Yardım mesajı gönderilemedi (HTTPException): Kanal {ctx.channel.id}. Hata: {e}")
+            await ctx.send("Yardım mesajı gönderilemedi (mesaj çok uzun veya başka bir HTTP sorunu olabilir).")
         except discord.Forbidden:
-             print(f"[UYARI] Yardım mesajı gönderilemedi (İzin Yok): Kanal {ctx.channel.id}")
+            print(f"[UYARI] Yardım mesajı gönderilemedi (İzin Yok): Kanal {ctx.channel.id}")
         except Exception as e:
             print(f"[HATA] Yardım mesajı gönderilirken beklenmedik hata: {e}")
-            # traceback.print_exc() # Detaylı hata için eklenebilir
+            traceback.print_exc()
             await ctx.send("Yardım mesajı gönderilirken bir sorun oluştu.")
 
-    # Hata Yönetimi
     @help_command.error
     async def help_command_error(self, ctx: commands.Context, error):
-        # Genel hata yakalayıcıya gitmeden önce burada özel işlem yapılabilir
-        print(f"[HATA] Yardım komutunda hata ({ctx.command.name}): {error}")
-        await ctx.send(f"❓ Yardım komutu işlenirken bir hata oluştu.")
+        """Yardım komutunda oluşan hataları yakalar."""
+        if isinstance(error, commands.CommandInvokeError):
+            print(f"[HATA] Yardım komutu işlenirken hata oluştu ({ctx.command.name}): {error.original}")
+            traceback.print_exc()
+            await ctx.send(f"❓ Yardım komutu işlenirken bir iç hata oluştu. Lütfen geliştiriciye bildirin.")
+        else:
+            print(f"[HATA] Yardım komutunda hata ({ctx.command.name}): {error}")
+            await ctx.send(f"❓ Yardım komutu işlenirken bir hata oluştu.")
 
-# Cog'u bota tanıtmak için gerekli setup fonksiyonu
 async def setup(bot: commands.Bot):
     await bot.add_cog(HelpCog(bot))
-    print("✅ Help Cog yüklendi!")
+    print(f"✅ {HelpCog.__name__} yüklendi!")
