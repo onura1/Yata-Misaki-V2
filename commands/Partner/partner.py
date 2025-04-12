@@ -25,7 +25,12 @@ logging.basicConfig(
 )
 
 # Türkiye zaman dilimini tanımla (UTC+3)
-TURKEY_TZ = pytz.timezone("Europe/Istanbul")
+try:
+    TURKEY_TZ = pytz.timezone("Europe/Istanbul")
+    logging.info("Türkiye zaman dilimi (Europe/Istanbul) başarıyla ayarlandı.")
+except Exception as e:
+    logging.error(f"pytz modülüyle ilgili hata: {e}. UTC zaman dilimi kullanılıyor.")
+    TURKEY_TZ = pytz.UTC
 
 class PartnershipCog(commands.Cog):
     """Partnerlik ile ilgili komutları ve olayları yönetir."""
@@ -137,6 +142,12 @@ class PartnershipCog(commands.Cog):
             self.logger.error(f"Davet linkinden sunucu adı alınırken hata: {e}")
             return "Hata"
 
+    def _validate_invite_code(self, invite_code: str) -> bool:
+        """Davet kodunun geçerli bir formatta olup olmadığını kontrol et."""
+        # Discord davet kodları genellikle 6-10 karakter uzunluğunda ve sadece alfanümerik veya tire içerir
+        pattern = r"^[a-zA-Z0-9-]{6,10}$"
+        return bool(re.match(pattern, invite_code))
+
     # --- Event Listener ---
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -158,14 +169,22 @@ class PartnershipCog(commands.Cog):
         if message.channel.id != partner_channel_id:
             return
 
-        invite_pattern = r"(https?://)?discord\.gg/[\w-]+"
+        # Güncellenmiş regex: Sadece geçerli davet kodlarını yakalar
+        invite_pattern = r"(?:https?://)?discord\.gg/([a-zA-Z0-9-]+)(?=\s|$)"
         invites = re.findall(invite_pattern, message.content)
         if not invites:
+            self.logger.debug(f"Mesajda geçerli bir davet linki bulunamadı: {message.content}")
             return
 
-        for invite_link in invites:
-            if not invite_link.startswith("http"):
-                invite_link = f"https://{invite_link}"
+        for invite_code in invites:
+            # Davet kodunu doğrula
+            if not self._validate_invite_code(invite_code):
+                self.logger.warning(f"Geçersiz davet kodu formatı: {invite_code}")
+                continue
+
+            # Davet linkini oluştur
+            invite_link = f"https://discord.gg/{invite_code}"
+            self.logger.debug(f"Davet linki kontrol ediliyor: {invite_link}")
 
             try:
                 invite = await self.bot.fetch_invite(invite_link)
@@ -177,6 +196,9 @@ class PartnershipCog(commands.Cog):
                 else:
                     self.logger.warning(f"Davet linki süresi dolmuş: {invite_link}")
                     continue
+            except discord.errors.InvalidArgument as e:
+                self.logger.error(f"Davet linki formatı geçersiz: {invite_link} | Hata: {e}")
+                continue
             except discord.errors.NotFound:
                 self.logger.warning(f"Davet linki geçersiz: {invite_link}")
                 continue
