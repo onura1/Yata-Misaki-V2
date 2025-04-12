@@ -7,11 +7,11 @@ import logging
 import datetime
 import re
 import os
-import pytz  # Zaman dilimi dönüşümleri için
+import pytz
 from typing import Optional, List, Tuple
 
 # --- Configuration ---
-DB_NAME = "partners.db"
+DB_NAME = os.path.join(os.path.dirname(__file__), "partners.db")
 LOG_FILE = "partner_system.log"
 
 # --- Logging Setup ---
@@ -19,7 +19,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),  # encoding ekleyin
+        logging.FileHandler(LOG_FILE, encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -33,7 +33,7 @@ class PartnershipCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.logger = logging.getLogger("PartnershipCog")
-        self._init_db()  # Veritabanını yapıcıda başlat
+        self._init_db()
 
     def _init_db(self):
         """SQLite veritabanını başlat."""
@@ -51,19 +51,18 @@ class PartnershipCog(commands.Cog):
             """)
             self.conn.commit()
             self.logger.info(f"'{DB_NAME}' veritabanına bağlandı.")
-        except sqlite3.Error as e:  # Daha spesifik hata yakalama
+        except sqlite3.Error as e:
             self.logger.error(f"Veritabanı başlatma hatası: {e}")
             self.conn = None
             self.cursor = None
 
     def _add_partner_record(self, user_id: int, guild_id: int, invite_link: str, timestamp: datetime.datetime):
         """Veritabanına yeni bir partner kaydı ekle."""
-        if not self.conn:  # Basitleştirilmiş bağlantı kontrolü
+        if not self.conn:
             self.logger.error("Veritabanı bağlantısı yok, partner kaydı eklenemiyor.")
             return
 
         try:
-            # Zaman damgasını Türkiye zaman dilimine çevirerek kaydet
             timestamp_tr = timestamp.astimezone(TURKEY_TZ)
             self.cursor.execute(
                 "INSERT INTO partners (user_id, guild_id, invite_link, timestamp) VALUES (?, ?, ?, ?)",
@@ -142,22 +141,23 @@ class PartnershipCog(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Partner kanalındaki linkleri tespit eder ve partnerliği kaydeder."""
-
-        # Bot mesajlarını ve DM'leri yoksay
         if message.author.bot or message.guild is None:
             return
 
-        # Ayarlardan partner kanalının ID'sini al
         partner_channel_id = self.bot.config.get("PARTNER_CHANNEL_ID")
         if not partner_channel_id:
             self.logger.error("[Hata] Yapılandırmada PARTNER_CHANNEL_ID bulunamadı.")
             return
 
-        # Sadece belirlenen partner kanalındaki mesajları işle
-        if message.channel.id != int(partner_channel_id):
+        try:
+            partner_channel_id = int(partner_channel_id)
+        except ValueError:
+            self.logger.error(f"[Hata] PARTNER_CHANNEL_ID geçersiz: {partner_channel_id}")
             return
 
-        # Mesajda Discord davet linki var mı kontrol et
+        if message.channel.id != partner_channel_id:
+            return
+
         invite_pattern = r"(https?://)?discord\.gg/[\w-]+"
         invites = re.findall(invite_pattern, message.content)
         if not invites:
@@ -172,32 +172,35 @@ class PartnershipCog(commands.Cog):
                 if not invite.guild:
                     self.logger.warning(f"Geçersiz davet linki: {invite_link}")
                     continue
-                guild_id = invite.guild.id
+                if not invite.expires_at or invite.expires_at > datetime.datetime.now(tz=pytz.UTC):
+                    guild_id = invite.guild.id
+                else:
+                    self.logger.warning(f"Davet linki süresi dolmuş: {invite_link}")
+                    continue
             except discord.errors.NotFound:
                 self.logger.warning(f"Davet linki geçersiz: {invite_link}")
                 continue
             except discord.errors.Forbidden:
                 self.logger.warning(f"Botun davet linkine erişim izni yok: {invite_link}")
                 continue
+            except discord.errors.HTTPException as e:
+                self.logger.error(f"Davet linki kontrol edilirken HTTP hatası: {e}")
+                continue
             except Exception as e:
                 self.logger.error(f"Davet linki kontrol edilirken hata: {e}")
                 continue
 
-            # Partnerliği kaydet
-            timestamp = message.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            timestamp = message.created_at
             self._add_partner_record(message.author.id, guild_id, invite_link, timestamp)
 
-            # Bildirim embed'ini oluştur
             embed = discord.Embed(
                 title="🎯 Yeni bir partnerlik bildirimi!",
-                color=discord.Color.red(),  # Embed rengi kırmızı
+                color=discord.Color.red(),
                 timestamp=message.created_at
             )
-            # Sunucunun profil resmini ekle
             if message.guild.icon:
                 embed.set_thumbnail(url=message.guild.icon.url)
 
-            # Partnerlik resmini config'den al
             partner_image_url = self.bot.config.get("PARTNER_IMAGE_URL", "")
             if partner_image_url:
                 embed.set_image(url=partner_image_url)
@@ -207,16 +210,14 @@ class PartnershipCog(commands.Cog):
                 value=(
                     f"🔥 Partnerlik yapılan sunucu: **{invite.guild.name}**\n"
                     f"🆔 Sunucu ID: {invite.guild.id}\n"
-                    f"⏰ Partnerlik Zamanı: {timestamp}"
+                    f"⏰ Partnerlik Zamanı: {timestamp.astimezone(TURKEY_TZ).strftime('%Y-%m-%d %H:%M:%S')}"
                 ),
                 inline=False
             )
             embed.set_footer(text=f"ID: {message.author.id}")
 
             try:
-                # Bildirimi aynı kanala gönder
                 await message.channel.send(embed=embed)
-                # İsteğe bağlı: Orijinal mesaja tepki ekle
                 await message.add_reaction("🤝")
             except discord.Forbidden:
                 self.logger.error(f"[Hata] {message.channel.name} kanalına mesaj gönderme veya tepki ekleme izni yok.")
@@ -235,21 +236,17 @@ class PartnershipCog(commands.Cog):
             await ctx.send("Veritabanı hatası nedeniyle istatistikler alınamıyor.")
             return
 
-        # Get partner details for each period
         daily_partners = self._get_partner_details("daily")
         monthly_partners = self._get_partner_details("monthly")
         yearly_partners = self._get_partner_details("yearly")
 
-        # Prepare the embed with red color
         embed = discord.Embed(
             title=f"{ctx.guild.name} Partner İstatistikleri",
-            color=discord.Color.red()  # Embed rengi kırmızı
+            color=discord.Color.red()
         )
-        # Sunucunun profil resmini ekle
         if ctx.guild.icon:
             embed.set_thumbnail(url=ctx.guild.icon.url)
 
-        # Daily partners
         daily_text = []
         for user_id, invite_link, timestamp in daily_partners:
             member = ctx.guild.get_member(user_id)
@@ -263,7 +260,6 @@ class PartnershipCog(commands.Cog):
             inline=False
         )
 
-        # Monthly partners
         monthly_text = []
         for user_id, invite_link, timestamp in monthly_partners:
             member = ctx.guild.get_member(user_id)
@@ -277,7 +273,6 @@ class PartnershipCog(commands.Cog):
             inline=False
         )
 
-        # Yearly partners
         yearly_text = []
         for user_id, invite_link, timestamp in yearly_partners:
             member = ctx.guild.get_member(user_id)
@@ -308,9 +303,8 @@ class PartnershipCog(commands.Cog):
         leaderboard = self._get_leaderboard(limit=10)
         embed = discord.Embed(
             title=f"🏆 {ctx.guild.name} Partner Lider Tablosu",
-            color=discord.Color.red()  # Embed rengi kırmızı
+            color=discord.Color.red()
         )
-        # Sunucunun profil resmini ekle
         if ctx.guild.icon:
             embed.set_thumbnail(url=ctx.guild.icon.url)
 
@@ -362,4 +356,3 @@ async def setup(bot: commands.Bot):
         logging.warning(f"'{DB_NAME}' veritabanı dosyası bulunamadı, ilk partner kaydında oluşturulacak.")
     await bot.add_cog(PartnershipCog(bot))
     print("✅ Partnership Cog yüklendi!")
-
